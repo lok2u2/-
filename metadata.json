@@ -1,0 +1,6 @@
+{
+  "name": "家庭药箱",
+  "description": "安全、安心、生动的家庭药物保质期及用药健康管理系统，支持多成员、精准出入库服药日志和过期警告。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
