@@ -16,6 +16,15 @@ interface UserDao {
     @Query("SELECT * FROM users ORDER BY username ASC")
     fun getAllUsers(): Flow<List<User>>
 
+    @Query("SELECT * FROM users")
+    suspend fun getAllUsersDirect(): List<User>
+
+    @Query("DELETE FROM users")
+    suspend fun deleteAllUsers()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUsers(users: List<User>)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertUser(user: User): Long
 
@@ -46,6 +55,12 @@ interface MedicationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMedication(medication: Medication): Long
 
+    @Query("DELETE FROM medications")
+    suspend fun deleteAllMedications()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMedications(medications: List<Medication>)
+
     @Update
     suspend fun updateMedication(medication: Medication)
 
@@ -57,6 +72,15 @@ interface MedicationDao {
 interface MedicationLogDao {
     @Query("SELECT * FROM medication_logs ORDER BY timestamp DESC")
     fun getAllLogsFlow(): Flow<List<MedicationLog>>
+
+    @Query("SELECT * FROM medication_logs")
+    suspend fun getAllLogsDirect(): List<MedicationLog>
+
+    @Query("DELETE FROM medication_logs")
+    suspend fun deleteAllLogs()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLogs(logs: List<MedicationLog>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLog(log: MedicationLog): Long

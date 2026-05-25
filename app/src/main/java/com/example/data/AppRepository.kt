@@ -219,4 +219,30 @@ class AppRepository(
 
     // Logs
     fun getAllLogsFlow(): Flow<List<MedicationLog>> = medicationLogDao.getAllLogsFlow()
+
+    // Backup & Restore
+    suspend fun exportBackupData(): String {
+        val users = userDao.getAllUsersDirect()
+        val medications = medicationDao.getAllMedications()
+        val logs = medicationLogDao.getAllLogsDirect()
+        return BackupHelper.serializeToJson(users, medications, logs)
+    }
+
+    suspend fun importBackupData(jsonString: String) {
+        val parsed = BackupHelper.deserializeFromJson(jsonString)
+        
+        userDao.deleteAllUsers()
+        medicationDao.deleteAllMedications()
+        medicationLogDao.deleteAllLogs()
+
+        if (parsed.users.isNotEmpty()) {
+            userDao.insertUsers(parsed.users)
+        }
+        if (parsed.medications.isNotEmpty()) {
+            medicationDao.insertMedications(parsed.medications)
+        }
+        if (parsed.logs.isNotEmpty()) {
+            medicationLogDao.insertLogs(parsed.logs)
+        }
+    }
 }

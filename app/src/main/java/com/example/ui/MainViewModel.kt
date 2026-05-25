@@ -217,7 +217,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         targetGroup: String,
         expiryDate: Long,
         batchNumber: String,
-        location: String
+        location: String,
+        instructionsImage: String? = null
     ) {
         val userName = _currentUser.value?.fullName ?: "匿名"
         viewModelScope.launch {
@@ -233,7 +234,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetGroup = targetGroup,
                 expiryDate = expiryDate,
                 batchNumber = batchNumber,
-                location = location
+                location = location,
+                instructionsImage = instructionsImage
             )
             repository.addMedication(med, userName)
             refreshTime()
@@ -254,7 +256,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         expiryDate: Long,
         batchNumber: String,
         location: String,
-        previousQty: Double
+        previousQty: Double,
+        instructionsImage: String? = null
     ) {
         val userName = _currentUser.value?.fullName ?: "匿名"
         viewModelScope.launch {
@@ -271,7 +274,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetGroup = targetGroup,
                 expiryDate = expiryDate,
                 batchNumber = batchNumber,
-                location = location
+                location = location,
+                instructionsImage = instructionsImage
             )
             repository.updateMedicationDetails(med, userName, previousQty)
             refreshTime()
@@ -301,6 +305,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteMedication(medId, userName)
             refreshTime()
+        }
+    }
+
+    // --- Data Export & Import Operations ---
+    private val _backupStatus = MutableStateFlow<String?>(null)
+    val backupStatus: StateFlow<String?> = _backupStatus.asStateFlow()
+
+    fun clearBackupStatus() {
+        _backupStatus.value = null
+    }
+
+    suspend fun getBackupJson(): String? {
+        return try {
+            repository.exportBackupData()
+        } catch (e: Exception) {
+            _backupStatus.value = "导出数据格式化发生错误: ${e.localizedMessage}"
+            null
+        }
+    }
+
+    fun restoreBackupJson(jsonString: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                if (jsonString.trim().isBlank()) {
+                    onError("导入失败：备份文件为空")
+                    return@launch
+                }
+                repository.importBackupData(jsonString)
+                
+                // Clear state, force logging back in as one of the restored target accounts for absolute safety
+                _currentUser.value = null
+                _currentScreen.value = Screen.HOME
+                refreshTime()
+                onSuccess()
+            } catch (e: Exception) {
+                onError("数据还原失败，无效的文件格式: ${e.localizedMessage}")
+            }
         }
     }
 }

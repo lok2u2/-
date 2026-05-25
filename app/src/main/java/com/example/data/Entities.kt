@@ -27,6 +27,7 @@ data class Medication(
     val expiryDate: Long, // timestamp of expiration date
     val batchNumber: String = "",
     val location: String = "", // e.g., "客厅抽屉"
+    val instructionsImage: String? = null,
     val createdTime: Long = System.currentTimeMillis()
 )
 

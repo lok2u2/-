@@ -30,6 +30,24 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SupervisedUserCircle
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.net.Uri
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,6 +88,66 @@ fun SystemScreen(viewModel: MainViewModel) {
     var changePasswordNewText by remember { mutableStateOf("") }
     var changePasswordErrorMsg by remember { mutableStateOf<String?>(null) }
     var changePasswordSuccessMsg by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var backupJsonString by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    var isImportConfirmDialogOpen by remember { mutableStateOf(false) }
+    var pendingImportText by remember { mutableStateOf("") }
+
+    var isPasteImportDialogOpen by remember { mutableStateOf(false) }
+    var clipboardInputText by remember { mutableStateOf("") }
+
+    // Storage Access Framework file launchers
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val json = backupJsonString
+            if (json != null) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        OutputStreamWriter(outputStream, "UTF-8").use { writer ->
+                            writer.write(json)
+                        }
+                    }
+                    successMessage = "数据已成功导出为本地 JSON 备份文件！"
+                    errorMessage = null
+                } catch (e: Exception) {
+                    errorMessage = "写入系统文件失败: ${e.localizedMessage}"
+                    successMessage = null
+                }
+            }
+        }
+    }
+
+    val importFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    BufferedReader(InputStreamReader(inputStream, "UTF-8")).use { reader ->
+                        val stringBuilder = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            stringBuilder.append(line).append("\n")
+                        }
+                        pendingImportText = stringBuilder.toString()
+                        isImportConfirmDialogOpen = true
+                    }
+                }
+            } catch (e: Exception) {
+                errorMessage = "读取备份文件发生错误: ${e.localizedMessage}"
+                successMessage = null
+            }
+        }
+    }
 
     val scrollState = rememberScrollState()
 
@@ -224,6 +302,188 @@ fun SystemScreen(viewModel: MainViewModel) {
                 }
             }
 
+            // --- Success Alert ---
+            AnimatedVisibility(visible = successMessage != null) {
+                successMessage?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "Success",
+                                tint = Color(0xFF2E8B57),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = it,
+                                fontSize = 12.sp,
+                                color = Color(0xFF1B5E20),
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = { successMessage = null },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("清空", fontSize = 12.sp, color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Error Alert ---
+            AnimatedVisibility(visible = errorMessage != null) {
+                errorMessage?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFDE8E8)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Error,
+                                contentDescription = "Error",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = it,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = { errorMessage = null },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("清空", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Backup and Import Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "💾 数据备份与跨机迁移",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = "支持本地备份与快速文本分享，以便您同步更换手机继续使用，保障全家用药及安全日志历史永不丢失。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    // 1. Export standard file launcher row
+                    SettingActionRow(
+                        title = "导出备份数据至本地文件",
+                        subtitle = "保存为安全可移植的 .json 备份文档",
+                        icon = Icons.Filled.FileUpload,
+                        onClick = {
+                            coroutineScope.launch {
+                                val json = viewModel.getBackupJson()
+                                if (json != null) {
+                                    backupJsonString = json
+                                    exportFileLauncher.launch("family_meds_backup_${System.currentTimeMillis() / 1000}.json")
+                                } else {
+                                    errorMessage = "准备备份数据错误"
+                                }
+                            }
+                        }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                            .padding(vertical = 4.dp)
+                    )
+
+                    // 2. Import standard file picker row
+                    SettingActionRow(
+                        title = "从备份文件恢复数据",
+                        subtitle = "读取本地 .json 文件，覆盖置换还原所有历史",
+                        icon = Icons.Filled.FileDownload,
+                        onClick = {
+                            try {
+                                importFileLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                            } catch (e: Exception) {
+                                errorMessage = "无法启动系统文件选择器: ${e.localizedMessage}"
+                            }
+                        }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                            .padding(vertical = 4.dp)
+                    )
+
+                    // 3. Copy text to clipboard
+                    SettingActionRow(
+                        title = "复制全量数据代码",
+                        subtitle = "一键复制全量加密文本，以便通过微信/QQ发送传输",
+                        icon = Icons.Filled.ContentCopy,
+                        onClick = {
+                            coroutineScope.launch {
+                                val json = viewModel.getBackupJson()
+                                if (json != null) {
+                                    clipboardManager.setText(AnnotatedString(json))
+                                    successMessage = "全量数据备份代码已成功复制到剪贴板！可以直接发送给新手机系统复原。"
+                                    errorMessage = null
+                                } else {
+                                    errorMessage = "生成备份文本失败"
+                                }
+                            }
+                        }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                            .padding(vertical = 4.dp)
+                    )
+
+                    // 4. Paste text and restore
+                    SettingActionRow(
+                        title = "粘帖代码还原系统数据",
+                        subtitle = "直接粘帖其它设备分享的代码，瞬间恢复药箱",
+                        icon = Icons.Filled.ContentPaste,
+                        onClick = {
+                            clipboardInputText = ""
+                            isPasteImportDialogOpen = true
+                        }
+                    )
+                }
+            }
+
             // Suggestion details card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -336,6 +596,129 @@ fun SystemScreen(viewModel: MainViewModel) {
                 dismissButton = {
                     TextButton(onClick = { isChangePasswordDialogOpen = false }) {
                         Text("关闭")
+                    }
+                }
+            )
+        }
+
+        // --- 1. Confirm File Import Disk Overwrite Dialog ---
+        if (isImportConfirmDialogOpen) {
+            AlertDialog(
+                onDismissRequest = { isImportConfirmDialogOpen = false },
+                title = { Text("⚠️ 恢复数据安全风险提示", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                text = {
+                    Text(
+                        text = "您正在请求还原导入家庭药箱历史数据。\n\n" +
+                               "注意：该操作属于高风险更改！它将完全清除本机当前的：\n" +
+                               "1. 所有注册的家庭人员账号；\n" +
+                               "2. 所有常备及临期药品存储数据；\n" +
+                               "3. 所有相关的服药、清理、库存修正日志记录。\n\n" +
+                               "此行为覆盖后将无法撤销，您确认继续进行替换吗？",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 19.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            isImportConfirmDialogOpen = false
+                            viewModel.restoreBackupJson(
+                                pendingImportText,
+                                onSuccess = {
+                                    successMessage = "家庭药箱数据成功复原！请使用备份中的账号登录系统。"
+                                    errorMessage = null
+                                },
+                                onError = { error ->
+                                    errorMessage = error
+                                    successMessage = null
+                                }
+                            )
+                        }
+                    ) {
+                        Text("确 认 置 换", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { isImportConfirmDialogOpen = false }) {
+                        Text("取 消")
+                    }
+                }
+            )
+        }
+
+        // --- 2. Paste Text Backup Dialog ---
+        if (isPasteImportDialogOpen) {
+            var pasteErrorMsg by remember { mutableStateOf<String?>(null) }
+            
+            AlertDialog(
+                onDismissRequest = { isPasteImportDialogOpen = false },
+                title = { Text("粘帖文本还原备份", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "请在下方长按粘帖另一台手机导出的备份 JSON 格式文本。确认后本机数据将全量置换覆盖。",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = clipboardInputText,
+                            onValueChange = { 
+                                clipboardInputText = it
+                                pasteErrorMsg = null
+                            },
+                            label = { Text("在此输入或粘帖备份数据文本") },
+                            placeholder = { Text("{\n  \"backup_version\": 1... \n}") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .testTag("paste_backup_input"),
+                            maxLines = 10
+                        )
+
+                        AnimatedVisibility(visible = pasteErrorMsg != null) {
+                            pasteErrorMsg?.let {
+                                Text(
+                                    text = it,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (clipboardInputText.trim().isBlank()) {
+                                pasteErrorMsg = "粘帖内容不能为空！"
+                                return@Button
+                            }
+                            isPasteImportDialogOpen = false
+                            viewModel.restoreBackupJson(
+                                clipboardInputText,
+                                onSuccess = {
+                                    successMessage = "备份文本复原成功！请使用还原后的任意关联账号登录系统。"
+                                    errorMessage = null
+                                },
+                                onError = { error ->
+                                    errorMessage = error
+                                    successMessage = null
+                                }
+                            )
+                        }
+                    ) {
+                        Text("确认还原并覆盖")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { isPasteImportDialogOpen = false }) {
+                        Text("取消")
                     }
                 }
             )

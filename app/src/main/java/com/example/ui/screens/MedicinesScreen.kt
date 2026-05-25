@@ -72,12 +72,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
 import com.example.data.Medication
 import com.example.ui.MainViewModel
 import java.util.Calendar
 import com.example.ui.theme.StatusExpired
 import com.example.ui.theme.StatusExpiringSoon
 import com.example.ui.theme.StatusHealthy
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import java.io.File
+import com.example.ui.ImageUtils
 
 @Composable
 fun MedicinesScreen(viewModel: MainViewModel) {
@@ -93,6 +106,7 @@ fun MedicinesScreen(viewModel: MainViewModel) {
     var isAddDialogVisible by remember { mutableStateOf(false) }
     var detailMedicationToShow by remember { mutableStateOf<Medication?>(null) }
     var medicationToEdit by remember { mutableStateOf<Medication?>(null) }
+    var medicationToDelete by remember { mutableStateOf<Medication?>(null) }
     
     // Quick action states (consumption/disposal)
     var activeActionType by remember { mutableStateOf("") } // "USE", "DISPOSE", "NONE"
@@ -329,8 +343,8 @@ fun MedicinesScreen(viewModel: MainViewModel) {
             MedicationFormDialog(
                 title = "录入家庭新药",
                 onDismiss = { isAddDialogVisible = false },
-                onSubmit = { name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc ->
-                    viewModel.addMedication(name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc)
+                onSubmit = { name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc, img ->
+                    viewModel.addMedication(name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc, img)
                     isAddDialogVisible = false
                 }
             )
@@ -376,8 +390,7 @@ fun MedicinesScreen(viewModel: MainViewModel) {
                                 Icon(Icons.Filled.Edit, contentDescription = "编辑", tint = MaterialTheme.colorScheme.primary)
                             }
                             IconButton(onClick = {
-                                viewModel.deleteMedication(currentMed.id)
-                                detailMedicationToShow = null
+                                medicationToDelete = currentMed
                             }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
                             }
@@ -411,6 +424,84 @@ fun MedicinesScreen(viewModel: MainViewModel) {
                                 DetailRow(label = "保质期至", value = formatMillisToDate(currentMed.expiryDate))
                                 DetailRow(label = "生产批号", value = currentMed.batchNumber.ifBlank { "无批号" })
                                 DetailRow(label = "存放位置", value = currentMed.location.ifBlank { "常温抽屉" })
+                            }
+                        }
+
+                        // If there is an instruction photo, show it with a nice expandable feature or native view!
+                        currentMed.instructionsImage?.let { base64 ->
+                            val bitmap = remember(base64) { ImageUtils.base64ToBitmap(base64) }
+                            if (bitmap != null) {
+                                var isExpandedPhotoOpen by remember { mutableStateOf(false) }
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("📄 服用说明书：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(160.dp)
+                                        .clickable { isExpandedPhotoOpen = true },
+                                    shape = RoundedCornerShape(12.dp),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize()) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "说明书照片",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.2f))
+                                        )
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(8.dp)
+                                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.ZoomIn,
+                                                contentDescription = "查看大图",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("点击查看大图", color = Color.White, fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+
+                                if (isExpandedPhotoOpen) {
+                                    AlertDialog(
+                                        onDismissRequest = { isExpandedPhotoOpen = false },
+                                        title = { Text("查看服用说明书大图", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+                                        text = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(360.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Image(
+                                                    bitmap = bitmap.asImageBitmap(),
+                                                    contentDescription = "说明书大图",
+                                                    contentScale = ContentScale.Fit,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(onClick = { isExpandedPhotoOpen = false }) {
+                                                Text("关闭")
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -558,11 +649,69 @@ fun MedicinesScreen(viewModel: MainViewModel) {
                 title = "修改药品信息",
                 medication = currentMed,
                 onDismiss = { medicationToEdit = null },
-                onSubmit = { name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc ->
+                onSubmit = { name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc, img ->
                     viewModel.updateMedication(
-                        currentMed.id, name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc, currentMed.quantity
+                        currentMed.id, name, qty, un, eff, dos, freq, tim, form, age, exp, bNum, loc, currentMed.quantity, img
                     )
                     medicationToEdit = null
+                }
+            )
+        }
+
+        // 4. CONFIRM DELETE DIALOG
+        medicationToDelete?.let { med ->
+            AlertDialog(
+                onDismissRequest = { medicationToDelete = null },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "确认删除该药品吗？",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "正在删除药品：${med.name}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "注意：删除后该药品的【所有库存数据】、【绑定的说明书图片】以及相关的【服药日志历史记录】都将被永久清除，且该操作不可撤销！",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            viewModel.deleteMedication(med.id)
+                            medicationToDelete = null
+                            detailMedicationToShow = null
+                        }
+                    ) {
+                        Text("确定删除", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { medicationToDelete = null }) {
+                        Text("考虑一下 (取消)")
+                    }
                 }
             )
         }
@@ -814,9 +963,55 @@ fun MedicationFormDialog(
     onSubmit: (
         name: String, quantity: Double, unit: String, efficacy: String, dosage: String,
         frequency: String, timing: String, form: String, targetGroup: String, expiryDate: Long,
-        batchNumber: String, location: String
+        batchNumber: String, location: String, instructionsImage: String?
     ) -> Unit
 ) {
+    val context = LocalContext.current
+    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var instructionsImageBase64 by remember { mutableStateOf(medication?.instructionsImage) }
+    var isPhotoActionSheetVisible by remember { mutableStateOf(false) }
+
+    fun createTempPictureUri(): Uri? {
+        return try {
+            val directory = File(context.cacheDir, "camera_photos")
+            if (!directory.exists()) {
+                directory.mkdirs()
+            }
+            val file = File.createTempFile("temp_take_photo_", ".jpg", directory)
+            val authority = "${context.packageName}.fileprovider"
+            androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    // Camera launcher
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            tempPhotoUri?.let { uri ->
+                val base64 = ImageUtils.uriToBase64(context, uri)
+                if (base64 != null) {
+                    instructionsImageBase64 = base64
+                }
+            }
+        }
+    }
+
+    // Gallery launcher
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val base64 = ImageUtils.uriToBase64(context, uri)
+            if (base64 != null) {
+                instructionsImageBase64 = base64
+            }
+        }
+    }
+
     var name by remember { mutableStateOf(medication?.name ?: "") }
     var quantityStr by remember { mutableStateOf(medication?.quantity?.toString() ?: "10") }
     var unit by remember { mutableStateOf(medication?.unit ?: "片") }
@@ -933,6 +1128,124 @@ fun MedicationFormDialog(
                     placeholder = { Text("如: 饭后半小时、空腹、睡前等") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Instruction Photo Section
+                Text("服用说明书图片 (拍照或相册)：", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                if (instructionsImageBase64 != null) {
+                    val bitmap = remember(instructionsImageBase64) { ImageUtils.base64ToBitmap(instructionsImageBase64) }
+                    if (bitmap != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                        ) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "说明书照片",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            // Remove button overlay top-right
+                            IconButton(
+                                onClick = { instructionsImageBase64 = null },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                    .size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Clear,
+                                    contentDescription = "清除图片",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            // Replace button overlay bottom-right
+                            Button(
+                                onClick = { isPhotoActionSheetVisible = true },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+                            ) {
+                                Text("重新拍照/选取", fontSize = 10.sp)
+                            }
+                        }
+                    } else {
+                        instructionsImageBase64 = null
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isPhotoActionSheetVisible = true },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PhotoCamera,
+                                contentDescription = "添加照片",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("添加说明书照片 (拍照/相册)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("可更换手机保存及恢复，字迹清晰优先", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+
+                if (isPhotoActionSheetVisible) {
+                    AlertDialog(
+                        onDismissRequest = { isPhotoActionSheetVisible = false },
+                        title = { Text("选择照片途径", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+                        text = { Text("您可以直接使用手机拍照说明书，或从本地相册中选用已有的说明书照片。", fontSize = 13.sp) },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    isPhotoActionSheetVisible = false
+                                    val uri = createTempPictureUri()
+                                    if (uri != null) {
+                                        tempPhotoUri = uri
+                                        takePictureLauncher.launch(uri)
+                                    }
+                                }
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("手机拍照")
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    isPhotoActionSheetVisible = false
+                                    pickImageLauncher.launch("image/*")
+                                }
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("相册选取")
+                                }
+                            }
+                        }
+                    )
+                }
 
                 // Drug Dosage Form Dropdown Selection (We make it visually selection or flow)
                 Text("分类剂型：", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
@@ -1068,7 +1381,8 @@ fun MedicationFormDialog(
                         targetGroupSelected,
                         finalExpiryDateTimestamp,
                         batchNumber.trim(),
-                        location.trim()
+                        location.trim(),
+                        instructionsImageBase64
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
