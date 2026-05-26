@@ -2,6 +2,8 @@ package com.example.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 class AppRepository(
     private val userDao: UserDao,
     private val medicationDao: MedicationDao,
@@ -221,14 +223,14 @@ class AppRepository(
     fun getAllLogsFlow(): Flow<List<MedicationLog>> = medicationLogDao.getAllLogsFlow()
 
     // Backup & Restore
-    suspend fun exportBackupData(): String {
+    suspend fun exportBackupData(): String = withContext(Dispatchers.IO) {
         val users = userDao.getAllUsersDirect()
         val medications = medicationDao.getAllMedications()
         val logs = medicationLogDao.getAllLogsDirect()
-        return BackupHelper.serializeToJson(users, medications, logs)
+        BackupHelper.serializeToJson(users, medications, logs)
     }
 
-    suspend fun importBackupData(jsonString: String) {
+    suspend fun importBackupData(jsonString: String) = withContext(Dispatchers.IO) {
         val parsed = BackupHelper.deserializeFromJson(jsonString)
         
         userDao.deleteAllUsers()

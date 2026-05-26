@@ -41,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -51,6 +53,8 @@ import com.example.ui.MainViewModel
 
 @Composable
 fun LoginScreen(viewModel: MainViewModel) {
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var isRegisterMode by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -236,6 +240,8 @@ fun LoginScreen(viewModel: MainViewModel) {
                     // Main Action button
                     Button(
                         onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                             if (isRegisterMode) {
                                 viewModel.register(username, password, fullName)
                             } else {
@@ -263,6 +269,8 @@ fun LoginScreen(viewModel: MainViewModel) {
                     // Mode switcher button
                     TextButton(
                         onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                             isRegisterMode = !isRegisterMode
                             username = ""
                             password = ""

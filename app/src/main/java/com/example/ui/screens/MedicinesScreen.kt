@@ -43,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
@@ -83,6 +84,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.ZoomIn
@@ -90,7 +93,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import java.io.File
+import android.widget.Toast
+import android.content.ActivityNotFoundException
 import com.example.ui.ImageUtils
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @Composable
 fun MedicinesScreen(viewModel: MainViewModel) {
@@ -967,6 +976,8 @@ fun MedicationFormDialog(
     ) -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var instructionsImageBase64 by remember { mutableStateOf(medication?.instructionsImage) }
     var isPhotoActionSheetVisible by remember { mutableStateOf(false) }
@@ -986,15 +997,24 @@ fun MedicationFormDialog(
         }
     }
 
+    val coroutineScope = rememberCoroutineScope()
+    var isProcessingImage by remember { mutableStateOf(false) }
+
     // Camera launcher
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success) {
             tempPhotoUri?.let { uri ->
-                val base64 = ImageUtils.uriToBase64(context, uri)
-                if (base64 != null) {
-                    instructionsImageBase64 = base64
+                isProcessingImage = true
+                coroutineScope.launch {
+                    val base64 = withContext(Dispatchers.IO) {
+                        ImageUtils.uriToBase64(context, uri)
+                    }
+                    if (base64 != null) {
+                        instructionsImageBase64 = base64
+                    }
+                    isProcessingImage = false
                 }
             }
         }
@@ -1005,9 +1025,15 @@ fun MedicationFormDialog(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val base64 = ImageUtils.uriToBase64(context, uri)
-            if (base64 != null) {
-                instructionsImageBase64 = base64
+            isProcessingImage = true
+            coroutineScope.launch {
+                val base64 = withContext(Dispatchers.IO) {
+                    ImageUtils.uriToBase64(context, uri)
+                }
+                if (base64 != null) {
+                    instructionsImageBase64 = base64
+                }
+                isProcessingImage = false
             }
         }
     }
@@ -1048,290 +1074,324 @@ fun MedicationFormDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = title, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (feedbackMsg != null) {
-                    Text(
-                        text = feedbackMsg ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f))
-                            .padding(8.dp)
-                    )
-                }
-
-                // Name
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("药品名称 (必填)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("form_name")
-                )
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Quantity
-                    OutlinedTextField(
-                        value = quantityStr,
-                        onValueChange = { quantityStr = it },
-                        label = { Text("存量数量") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f).testTag("form_quantity")
-                    )
-
-                    // Unit selector text field
-                    OutlinedTextField(
-                        value = unit,
-                        onValueChange = { unit = it },
-                        label = { Text("单位 (片/毫升..)") },
-                        modifier = Modifier.weight(1f).testTag("form_unit")
-                    )
-                }
-
-                // Efficacy/Function
-                OutlinedTextField(
-                    value = efficacy,
-                    onValueChange = { efficacy = it },
-                    label = { Text("主要功效/治疗疾病 (如: 止咳、退烧缓头痛)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("form_efficacy")
-                )
-
-                // Usage Details
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = dosage,
-                        onValueChange = { dosage = it },
-                        label = { Text("服药剂量 (如每次1片)") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = frequency,
-                        onValueChange = { frequency = it },
-                        label = { Text("一天几次") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // Timing
-                OutlinedTextField(
-                    value = timing,
-                    onValueChange = { timing = it },
-                    label = { Text("服用时间安排") },
-                    placeholder = { Text("如: 饭后半小时、空腹、睡前等") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Instruction Photo Section
-                Text("服用说明书图片 (拍照或相册)：", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-                if (instructionsImageBase64 != null) {
-                    val bitmap = remember(instructionsImageBase64) { ImageUtils.base64ToBitmap(instructionsImageBase64) }
-                    if (bitmap != null) {
-                        Box(
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (feedbackMsg != null) {
+                        Text(
+                            text = feedbackMsg ?: "",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(140.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                        ) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "说明书照片",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            // Remove button overlay top-right
-                            IconButton(
-                                onClick = { instructionsImageBase64 = null },
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f))
+                                .padding(8.dp)
+                        )
+                    }
+
+                    // Name
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("药品名称 (必填)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("form_name")
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Quantity
+                        OutlinedTextField(
+                            value = quantityStr,
+                            onValueChange = { quantityStr = it },
+                            label = { Text("存量数量") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).testTag("form_quantity")
+                        )
+
+                        // Unit selector text field
+                        OutlinedTextField(
+                            value = unit,
+                            onValueChange = { unit = it },
+                            label = { Text("单位 (片/毫升..)") },
+                            modifier = Modifier.weight(1f).testTag("form_unit")
+                        )
+                    }
+
+                    // Efficacy/Function
+                    OutlinedTextField(
+                        value = efficacy,
+                        onValueChange = { efficacy = it },
+                        label = { Text("主要功效/治疗疾病 (如: 止咳、退烧缓头痛)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("form_efficacy")
+                    )
+
+                    // Usage Details
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = dosage,
+                            onValueChange = { dosage = it },
+                            label = { Text("服药剂量 (如每次1片)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = frequency,
+                            onValueChange = { frequency = it },
+                            label = { Text("一天几次") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // Timing
+                    OutlinedTextField(
+                        value = timing,
+                        onValueChange = { timing = it },
+                        label = { Text("服用时间安排") },
+                        placeholder = { Text("如: 饭后半小时、空腹、睡前等") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Instruction Photo Section
+                    Text("服用说明书图片 (拍照或相册)：", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                    if (instructionsImageBase64 != null) {
+                        val bitmap = remember(instructionsImageBase64) { ImageUtils.base64ToBitmap(instructionsImageBase64) }
+                        if (bitmap != null) {
+                            Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                    .size(28.dp)
+                                    .fillMaxWidth()
+                                    .height(140.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Clear,
-                                    contentDescription = "清除图片",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "说明书照片",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
+                                // Remove button overlay top-right
+                                IconButton(
+                                    onClick = { instructionsImageBase64 = null },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                        .size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Clear,
+                                        contentDescription = "清除图片",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                // Replace button overlay bottom-right
+                                Button(
+                                    onClick = { isPhotoActionSheetVisible = true },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+                                ) {
+                                    Text("重新拍照/选取", fontSize = 10.sp)
+                                }
                             }
-                            // Replace button overlay bottom-right
-                            Button(
-                                onClick = { isPhotoActionSheetVisible = true },
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
-                            ) {
-                                Text("重新拍照/选取", fontSize = 10.sp)
-                            }
+                        } else {
+                            instructionsImageBase64 = null
                         }
                     } else {
-                        instructionsImageBase64 = null
-                    }
-                } else {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { isPhotoActionSheetVisible = true },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                    ) {
-                        Column(
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                                .clickable { isPhotoActionSheetVisible = true },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.PhotoCamera,
-                                contentDescription = "添加照片",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("添加说明书照片 (拍照/相册)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text("可更换手机保存及恢复，字迹清晰优先", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.PhotoCamera,
+                                    contentDescription = "添加照片",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("添加说明书照片 (拍照/相册)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text("可更换手机保存及恢复，字迹清晰优先", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                            }
                         }
                     }
-                }
 
-                if (isPhotoActionSheetVisible) {
-                    AlertDialog(
-                        onDismissRequest = { isPhotoActionSheetVisible = false },
-                        title = { Text("选择照片途径", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
-                        text = { Text("您可以直接使用手机拍照说明书，或从本地相册中选用已有的说明书照片。", fontSize = 13.sp) },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    isPhotoActionSheetVisible = false
-                                    val uri = createTempPictureUri()
-                                    if (uri != null) {
-                                        tempPhotoUri = uri
-                                        takePictureLauncher.launch(uri)
+                    if (isPhotoActionSheetVisible) {
+                        AlertDialog(
+                            onDismissRequest = { isPhotoActionSheetVisible = false },
+                            title = { Text("选择照片途径", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+                            text = { Text("您可以直接使用手机拍照说明书，或从本地相册中选用已有的说明书照片。", fontSize = 13.sp) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        isPhotoActionSheetVisible = false
+                                        val uri = createTempPictureUri()
+                                        if (uri != null) {
+                                            tempPhotoUri = uri
+                                            try {
+                                                takePictureLauncher.launch(uri)
+                                            } catch (e: ActivityNotFoundException) {
+                                                Toast.makeText(context, "未找到相机应用，请通过相册选取图片！", Toast.LENGTH_LONG).show()
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "启动相机失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("手机拍照")
                                     }
                                 }
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("手机拍照")
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = {
+                                        isPhotoActionSheetVisible = false
+                                        try {
+                                            pickImageLauncher.launch("image/*")
+                                        } catch (e: ActivityNotFoundException) {
+                                            Toast.makeText(context, "未找到图片浏览器或相册应用！", Toast.LENGTH_LONG).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "启动相册失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("相册选取")
+                                    }
                                 }
                             }
-                        },
-                        dismissButton = {
-                            TextButton(
-                                onClick = {
-                                    isPhotoActionSheetVisible = false
-                                    pickImageLauncher.launch("image/*")
-                                }
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("相册选取")
-                                }
-                            }
-                        }
-                    )
-                }
+                        )
+                    }
 
-                // Drug Dosage Form Dropdown Selection (We make it visually selection or flow)
-                Text("分类剂型：", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(forms) { fm ->
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = if (formSelected == fm) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = RoundedCornerShape(12.dp)
+                    // Drug Dosage Form Dropdown Selection (We make it visually selection or flow)
+                    Text("分类剂型：", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(forms) { fm ->
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = if (formSelected == fm) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { formSelected = fm }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = fm,
+                                    fontSize = 11.sp,
+                                    color = if (formSelected == fm) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
                                 )
-                                .clickable { formSelected = fm }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
+                            }
+                        }
+                    }
+
+                    // Suitable Age Group Radio
+                    Text("适宜人群：", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        val ageOptions = listOf("通用", "成人", "儿童")
+                        ageOptions.forEach { age ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(
+                                    selected = targetGroupSelected == age,
+                                    onClick = { targetGroupSelected = age }
+                                )
+                                Text(text = age, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    // Expiration Date Inputs (Year / Month / Day) - 100% Native Crash-Free Date editing!
+                    Text("有效期截至：", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = yearStr,
+                            onValueChange = { yearStr = it },
+                            label = { Text("年 (YYYY)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1.2f)
+                        )
+                        OutlinedTextField(
+                            value = monthStr,
+                            onValueChange = { monthStr = it },
+                            label = { Text("月 (MM)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(0.9f)
+                        )
+                        OutlinedTextField(
+                            value = dayStr,
+                            onValueChange = { dayStr = it },
+                            label = { Text("日 (DD)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
+
+                    // Storage location or batch no
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = location,
+                            onValueChange = { location = it },
+                            label = { Text("存放抽屉/位置") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = batchNumber,
+                            onValueChange = { batchNumber = it },
+                            label = { Text("生产批号") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                if (isProcessingImage) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp))
+                            .clickable(enabled = true, onClick = {}),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             Text(
-                                text = fm,
-                                fontSize = 11.sp,
-                                color = if (formSelected == fm) Color.White else MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Medium
+                                text = "正在高效加工及压缩说明书图片...",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                }
-
-                // Suitable Age Group Radio
-                Text("适宜人群：", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    val ageOptions = listOf("通用", "成人", "儿童")
-                    ageOptions.forEach { age ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = targetGroupSelected == age,
-                                onClick = { targetGroupSelected = age }
-                            )
-                            Text(text = age, fontSize = 12.sp)
-                        }
-                    }
-                }
-
-                // Expiration Date Inputs (Year / Month / Day) - 100% Native Crash-Free Date editing!
-                Text("有效期截至：", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    OutlinedTextField(
-                        value = yearStr,
-                        onValueChange = { yearStr = it },
-                        label = { Text("年 (YYYY)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1.2f)
-                    )
-                    OutlinedTextField(
-                        value = monthStr,
-                        onValueChange = { monthStr = it },
-                        label = { Text("月 (MM)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(0.9f)
-                    )
-                    OutlinedTextField(
-                        value = dayStr,
-                        onValueChange = { dayStr = it },
-                        label = { Text("日 (DD)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(0.9f)
-                    )
-                }
-
-                // Storage location or batch no
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = location,
-                        onValueChange = { location = it },
-                        label = { Text("存放抽屉/位置") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = batchNumber,
-                        onValueChange = { batchNumber = it },
-                        label = { Text("生产批号") },
-                        modifier = Modifier.weight(1f)
-                    )
                 }
             }
         },
@@ -1369,6 +1429,9 @@ fun MedicationFormDialog(
 
                     val finalExpiryDateTimestamp = cal.timeInMillis
 
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+
                     onSubmit(
                         name.trim(),
                         qtyVal,
@@ -1391,7 +1454,11 @@ fun MedicationFormDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                onDismiss()
+            }) {
                 Text("取消")
             }
         }

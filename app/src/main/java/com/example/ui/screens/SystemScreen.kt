@@ -41,6 +41,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import android.net.Uri
 import java.io.BufferedReader
@@ -91,6 +93,8 @@ fun SystemScreen(viewModel: MainViewModel) {
 
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val coroutineScope = rememberCoroutineScope()
 
     var backupJsonString by remember { mutableStateOf<String?>(null) }
@@ -528,7 +532,11 @@ fun SystemScreen(viewModel: MainViewModel) {
         // Change password dialog
         if (isChangePasswordDialogOpen) {
             AlertDialog(
-                onDismissRequest = { isChangePasswordDialogOpen = false },
+                onDismissRequest = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    isChangePasswordDialogOpen = false
+                },
                 title = { Text("修改个人登录密码", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -576,6 +584,8 @@ fun SystemScreen(viewModel: MainViewModel) {
                 confirmButton = {
                     Button(
                         onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                             viewModel.changePassword(
                                 changePasswordNewText,
                                 onSuccess = {
@@ -594,7 +604,11 @@ fun SystemScreen(viewModel: MainViewModel) {
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { isChangePasswordDialogOpen = false }) {
+                    TextButton(onClick = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        isChangePasswordDialogOpen = false
+                    }) {
                         Text("关闭")
                     }
                 }
@@ -653,7 +667,11 @@ fun SystemScreen(viewModel: MainViewModel) {
             var pasteErrorMsg by remember { mutableStateOf<String?>(null) }
             
             AlertDialog(
-                onDismissRequest = { isPasteImportDialogOpen = false },
+                onDismissRequest = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    isPasteImportDialogOpen = false
+                },
                 title = { Text("粘帖文本还原备份", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -695,6 +713,8 @@ fun SystemScreen(viewModel: MainViewModel) {
                 confirmButton = {
                     Button(
                         onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                             if (clipboardInputText.trim().isBlank()) {
                                 pasteErrorMsg = "粘帖内容不能为空！"
                                 return@Button
@@ -717,7 +737,11 @@ fun SystemScreen(viewModel: MainViewModel) {
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { isPasteImportDialogOpen = false }) {
+                    TextButton(onClick = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        isPasteImportDialogOpen = false
+                    }) {
                         Text("取消")
                     }
                 }
